@@ -1,4 +1,4 @@
-# Steam 游戏 Mod 下载同步工具（服务端）
+# Steam 游戏 Mod 下载同步工具
 
 使用 Python + FastAPI 编写的 Steam 创意工坊 Mod 管理同步工具。
 通过 Web 管理端配置游戏与 Mod，利用 `steamcmd` 手动触发下载，
@@ -47,7 +47,7 @@ game_sync/
 │   ├── broadcast.py         # 局域网广播
 │   ├── file_dist.py         # 文件分发 + 分组清单/下载解析
 │   ├── install.py           # 服务端安装类型（copy/rename/extract，模块化）
-│   ├── proxy.py             # socks5 代理配置（仅 Steam 网页访问）
+│   ├── proxy.py             # socks5/http/https 代理配置（仅 Steam 网页访问）
 │   └── templates/index.html # Web 管理界面
 ├── client/                  # 桌面客户端（tkinter，纯标准库）
 │   ├── config.py            # 硬编码 AppID + 默认服务端地址 + 运行期配置（本地路径）
@@ -59,20 +59,15 @@ game_sync/
 │   ├── endpoint.py          # 服务端地址管理：默认地址优先 + 广播动态更新 + 自动重连
 │   ├── ui.py                # 图形界面
 │   └── __main__.py          # 入口：python -m client
-├── demo/                    # 参考示例（请勿改动）
-├── config.toml              # 服务端运行时配置
-├── client_config.json       # 客户端运行期配置（生成）
 ├── requirements.txt         # 服务端依赖
 └── README.md
 ```
 
 ### 安装与运行
 
-项目自带本地虚拟环境 `venv/`（Windows 下解释器为 `venv\Scripts\python.exe`）。
-
 ```bash
 # 1. 安装依赖（使用项目本地 venv）
-venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # 2. 准备 steamcmd
 #    Windows: 下载 https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip 并解压
@@ -85,7 +80,7 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 #    注意事项：经过实际测试，steamcmd需要完成一次手动登录，首次登录需要手动完成登录验证，不要在设置中填写密码，仅填写用户名，否则后续每次使用steamcmd时可能都会需要验证。
 
 # 4. 启动服务
-venv\Scripts\python.exe -m app.server
+python -m app.server
 # 浏览器打开 http://<host>:8080
 # 首次访问使用默认账号 admin / admin123 登录（请在设置中修改密码）
 ```
@@ -98,7 +93,7 @@ venv\Scripts\python.exe -m app.server
 1. 打开 Web 管理端，使用 `admin` / `admin123` 登录。
 2. **设置** → 填写 `steamcmd 路径` 与 `存储目录`，保存。
 3. （可选）**设置** → 配置并启用 **Steam 账号**：填用户名/密码，点「测试登录」；
-   若提示需要设备授权，把收到的 Guard 码填入后保存再测试，直到登录成功。
+   若提示需要设备授权，把收到的 Guard 码填入后保存再测试，直到登录成功。(**注意:**实际测试发现，最好的方式是手动登录，设置中只填写账号，不要填写密码，首次登录成功后后续登录无需密码即可。)
 4. **游戏 / Mod**：添加游戏——可填 AppID 或直接粘贴 Steam 商店页地址（`.../app/<AppID>`），
    点「获取名称」自动从 Steam 填充；添加后生成 `games/<AppID>.toml`。
    在每个游戏下添加 Mod——可填 ID 或粘贴创意工坊订阅链接（自动解析），
