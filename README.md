@@ -4,6 +4,9 @@
 通过 Web 管理端配置游戏与 Mod，利用 `steamcmd` 手动触发下载，
 并对外提供文件分发接口。
 
+*我本来是为了解决和朋友一起玩儿L4D2时mod同步问题的，同时也为了解决mod加载慢，经常遇到全部重新下载的情况。
+简单试了一下饥荒联机版，其他的没有试过。感觉比较有用，就放在这里。大部分功能是AI写的*
+
 ## 服务端
 
 ### 功能
@@ -158,6 +161,16 @@ Mod 下载后位于：
 `<存储目录>/<appid>/steamapps/workshop/content/<appid>/<itemid>/`
 
 
+### 代理配置
+
+为 **Steam 网页访问（商店 / 社区 / API）** 指定出口代理，兼容 http / https(socks5目前测试经常遇到问题，不建议使用)。配置可通过 `config.toml` 的 `[proxy]` 段或环境变量指定地址与端口，**发起请求时自动生效**。
+
+**生效范围**
+
+- ✅ **生效**：Python 侧发起的 Steam 网页与 API 请求（获取游戏名、Mod 名称、工坊依赖解析）。
+- ❌ **不生效**：**steamcmd 子进程（Mod 下载）不使用本代理**(事实上也无法生效)。
+
+
 
 ### 接口一览
 
@@ -245,14 +258,5 @@ C:\app\Python313\python.exe -m client
 - **客户端**（`client/api.py` 的 `download_file`）：请求带 `Accept-Encoding: gzip`；若响应 `Content-Encoding: gzip` 则用 `zlib.decompressobj(16+MAX_WBITS)` **流式解压**后写盘；进度总量取 `X-Original-Size`（原始大小），保证进度条按解压后的真实大小推进。
 
 **兼容性**：不带 `Accept-Encoding` 的客户端 → 服务端返回原始文件，行为与改造前完全一致；浏览器自带 `Accept-Encoding` 并自动解压，也正常。压缩是**可选增强，非破坏性改动**。
-
-### 代理配置
-
-为 **Steam 网页访问（商店 / 社区 / API）** 指定出口代理，兼容 http / https(socks5目前测试经常遇到问题，不建议使用)。配置可通过 `config.toml` 的 `[proxy]` 段或环境变量指定地址与端口，**发起请求时自动生效**。
-
-**生效范围**
-
-- ✅ **生效**：Python 侧发起的 Steam 网页与 API 请求（获取游戏名、Mod 名称、工坊依赖解析）。
-- ❌ **不生效**：**steamcmd 子进程（Mod 下载）不使用本代理**(事实上也无法生效)。
 
 
