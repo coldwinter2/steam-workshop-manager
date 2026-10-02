@@ -1,0 +1,13 @@
+**/__pycache__/
+.workbuddy/
+games/
+mods/
+steamcmd/
+*.json
+build_assets/
+build_venv/
+venv/
+build/
+demo/
+tests/
+config.toml

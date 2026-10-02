@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Steam Mod 同步工具</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="alternate icon" href="/favicon.svg" />
+<style>
+  :root {
+    --bg-dark: #1a1a2e; --bg-medium: #16213e; --bg-light: #0f3460;
+    --accent: #e94560; --accent-hover: #ff6b6b;
+    --success: #00d26a; --warning: #ffc107; --error: #ff4757;
+    --text: #ffffff; --text-dim: #a0a0a0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg-dark); color: var(--text); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: var(--bg-medium); border-bottom: 1px solid #2a2a4a; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { color: var(--text-dim); font-size: 12px; }
+  nav { display: flex; gap: 6px; }
+  nav button { background: transparent; border: none; color: var(--text-dim); padding: 8px 14px; cursor: pointer; border-radius: 6px; font-size: 14px; }
+  nav button.active, nav button:hover { background: var(--bg-light); color: var(--text); }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .cards { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+  .card { flex: 1 1 180px; background: var(--bg-medium); border-radius: 10px; padding: 16px; border: 1px solid #2a2a4a; }
+  .card .k { color: var(--text-dim); font-size: 12px; }
+  .card .v { font-size: 20px; font-weight: bold; margin-top: 6px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .badge.ok { background: rgba(0,210,106,.18); color: var(--success); }
+  .badge.err { background: rgba(255,71,87,.18); color: var(--error); }
+  .badge.warn { background: rgba(255,193,7,.18); color: var(--warning); }
+  .btn { background: var(--bg-light); color: var(--text); border: none; padding: 9px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .btn:hover { background: var(--accent); }
+  .btn.primary { background: var(--accent); font-weight: bold; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger { background: transparent; color: var(--error); border: 1px solid var(--error); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--text-dim); }
+  .field input, .field select { background: var(--bg-dark); border: 1px solid #2a2a4a; color: var(--text); padding: 8px 10px; border-radius: 6px; min-width: 180px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2a2a4a; font-size: 13px; }
+  th { color: var(--text-dim); background: var(--bg-medium); }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .panel { background: var(--bg-medium); border-radius: 10px; padding: 16px; margin-bottom: 16px; border: 1px solid #2a2a4a; }
+  .panel h3 { margin: 0 0 12px; font-size: 15px; }
+  .log { background: #0d0d1a; border-radius: 8px; padding: 12px; height: 280px; overflow-y: auto; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; color: #c8c8e0; }
+  .empty { color: var(--text-dim); padding: 20px; text-align: center; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--bg-light); padding: 10px 18px; border-radius: 8px; opacity: 0; transition: opacity .3s; pointer-events: none; font-size: 14px; }
+  .toast.show { opacity: 1; }
+  .mods { margin-top: 8px; padding-left: 14px; border-left: 2px solid var(--bg-light); }
+  .mod-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; gap: 10px; }
+  .mod-item .meta { color: var(--text-dim); font-size: 12px; }
+  .hint { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+  .section-title { font-size: 13px; color: var(--text-dim); margin: 18px 0 8px; border-top: 1px solid #2a2a4a; padding-top: 12px; }
+  /* 登录遮罩 */
+  #loginOverlay { position: fixed; inset: 0; background: rgba(10,10,20,.92); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  #loginBox { background: var(--bg-medium); padding: 32px; border-radius: 12px; width: 320px; border: 1px solid #2a2a4a; }
+  #loginBox h2 { margin: 0 0 18px; font-size: 18px; text-align: center; }
+  #loginBox .field { margin-bottom: 14px; }
+  #loginBox input { width: 100%; }
+  #loginBox .btn { width: 100%; padding: 11px; }
+</style>
+</head>
+<body>
+<!-- 登录遮罩 -->
+<div id="loginOverlay">
+  <div id="loginBox">
+    <h2>🔐 登录管理端</h2>
+    <div class="field"><label>用户名</label><input id="loginUser" placeholder="admin" /></div>
+    <div class="field"><label>密码</label><input id="loginPass" type="password" placeholder="admin123" /></div>
+    <button class="btn primary" id="loginBtn">登录</button>
+    <div class="hint" style="text-align:center;margin-top:10px;">默认账号 admin / admin123</div>
+  </div>
+</div>
+
+<header>
+  <div>
+    <h1>🎮 Steam Mod 同步工具</h1>
+    <div class="sub">服务端管理端 · steamcmd 下载 · Web 配置</div>
+  </div>
+  <nav>
+    <button data-tab="dash" class="active">仪表盘</button>
+    <button data-tab="games">游戏 / Mod</button>
+    <button data-tab="settings">设置</button>
+    <button data-tab="manifest">已下载清单</button>
+    <button id="logoutBtn" style="color:var(--text-dim);">登出</button>
+  </nav>
+</header>
+
+<main>
+  <!-- 仪表盘 -->
+  <section id="tab-dash" class="tab active">
+    <div class="cards" id="statusCards"></div>
+    <div class="panel">
+      <h3>同步日志</h3>
+      <div style="margin-bottom:10px;">
+        <button class="btn primary" id="syncBtn">🚀 全部更新</button>
+        <button class="btn" id="autoRunBtn">⚡ 立即更新</button>
+        <span id="syncHint" class="sub" style="color:var(--text-dim);margin-left:10px;"></span>
+        <button class="btn" id="logReconnectBtn" style="float:right;" title="重新拉取当前任务日志（等价刷新后自动重连）">⟳ 重连日志</button>
+      </div>
+      <div class="hint" style="margin-bottom:8px;">「全部更新」更新所有已配置 Mod；「立即更新」只处理<b>尚未下载</b>的 Mod（与自动定时更新同一逻辑）。任一更新任务完成后，自动更新计时会重新起算。任务执行中<b>刷新页面也不会丢日志</b>：重连后按序号断点续传；断网会自动退避重连。</div>
+      <div class="log" id="syncLog">尚未执行同步。</div>
+    </div>
+    <div class="panel">
+      <h3>自动更新</h3>
+      <div id="autoInfo" class="hint" style="color:var(--text-dim);">加载中…</div>
+    </div>
+  </section>
+
+  <!-- 游戏 / Mod -->
+  <section id="tab-games" class="tab">
+    <div class="panel">
+      <h3>添加游戏</h3>
+      <div class="row">
+        <div class="field"><label>AppID 或商店页地址</label><input id="gAppid" placeholder="294100 或 https://store.steampowered.com/app/294100" style="min-width:360px;" /></div>
+        <div class="field"><label>名称</label><input id="gName" placeholder="留空可自动获取" /></div>
+        <div class="field"><label>描述</label><input id="gDesc" placeholder="可选" /></div>
+        <div class="field"><label>安装方式</label>
+          <select id="gInstall">
+            <option value="copy">原样复制</option>
+            <option value="rename">重命名（如 .vpk）</option>
+            <option value="extract">解压缩（zip）</option>
+          </select>
+        </div>
+        <div class="field" id="gExtField" style="display:none;">
+          <label>重命名后缀</label>
+          <input id="gRenameExt" placeholder=".vpk" value=".vpk" style="min-width:110px;" />
+        </div>
+        <button class="btn" id="gFetchBtn">获取名称</button>
+        <button class="btn primary" id="addGameBtn">添加游戏</button>
+      </div>
+      <div class="hint">每个游戏会生成独立的 TOML 配置文件（games/&lt;AppID&gt;.toml）存放其 Mod 列表。支持直接粘贴 Steam 商店页地址。安装方式决定客户端下载后的落地方式（服务端只标记并下行对应内容，客户端执行安装）。</div>
+    </div>
+    <div id="gamesList"></div>
+  </section>
+
+  <!-- 设置 -->
+  <section id="tab-settings" class="tab">
+    <div class="panel">
+      <h3>基础设置</h3>
+      <div class="row">
+        <div class="field"><label>steamcmd 路径</label><input id="sCmd" style="min-width:320px;" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>存储目录</label><input id="sStore" style="min-width:320px;" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>监听地址</label><input id="sHost" /></div>
+        <div class="field"><label>端口</label><input id="sPort" type="number" /></div>
+        <div class="field"><label>广播端口</label><input id="sBPort" type="number" /></div>
+        <div class="field"><label>广播间隔(秒)</label><input id="sBInt" type="number" /></div>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="sBcast" /> 启用局域网广播
+        </label>
+      </div>
+      <button class="btn primary" id="saveSettingsBtn">保存基础设置</button>
+      <span class="hint">提示：地址/端口修改后需重启服务生效。</span>
+    </div>
+
+    <div class="panel">
+      <h3>Web 登录账号</h3>
+      <div class="row">
+        <div class="field"><label>用户名</label><input id="authUser" /></div>
+        <div class="field"><label>新密码（留空不修改）</label><input id="authPass" type="password" /></div>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="authEnabled" /> 启用登录鉴权
+        </label>
+      </div>
+      <button class="btn primary" id="saveAuthBtn">保存账号设置</button>
+      <div class="hint">密码以 PBKDF2 加盐哈希存储，不可逆。</div>
+    </div>
+
+    <div class="panel">
+      <h3>Steam 账号（用于 steamcmd 登录下载）</h3>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="steamEnabled" /> 启用 Steam 账号登录（关闭则匿名下载公开 Mod）
+        </label>
+      </div>
+      <div class="row">
+        <div class="field"><label>Steam 用户名</label><input id="steamUser" style="min-width:240px;" /></div>
+        <div class="field"><label>Steam 密码</label><input id="steamPass" type="password" style="min-width:240px;" /></div>
+        <div class="field"><label>设备授权码(Guard)</label><input id="steamGuard" placeholder="首次登录收到后填入" /></div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="saveSteamBtn">保存 Steam 账号</button>
+        <button class="btn" id="testSteamBtn">测试登录</button>
+      </div>
+      <div class="hint">密码以 Fernet 对称加密存储，仅用于回传 steamcmd。首次在新设备登录 Steam 可能要求输入邮箱/手机验证码（设备授权），请先在「测试登录」中完成授权，steamcmd 会本地记住登录态。</div>
+      <div class="log" id="steamTestLog" style="display:none;height:160px;margin-top:10px;"></div>
+    </div>
+
+    <div class="panel">
+      <h3>代理设置（steamcmd 与 Steam 网页访问出口）</h3>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="proxyEnabled" /> 启用代理（强制 steamcmd 下载与 Steam 商店/社区/API 请求经代理）
+        </label>
+      </div>
+      <div class="row">
+        <div class="field"><label>类型</label>
+          <select id="proxyType">
+            <option value="socks5">socks5（默认，支持 DNS 远程解析）</option>
+            <option value="http">http</option>
+            <option value="https">https</option>
+          </select>
+        </div>
+        <div class="field"><label>地址</label><input id="proxyHost" placeholder="127.0.0.1" /></div>
+        <div class="field"><label>端口</label><input id="proxyPort" type="number" placeholder="1080" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>用户名（可选）</label><input id="proxyUser" /></div>
+        <div class="field"><label>密码（可选）</label><input id="proxyPass" type="password" /></div>
+      </div>
+      <button class="btn primary" id="saveProxyBtn">保存代理设置</button>
+      <div class="hint">仅用于 <b>Steam 网页请求</b>（获取游戏名 / Mod 名称 / 工坊依赖），通过 PySocks 经 SOCKS5（远程解析 DNS）；<b>不作用于 steamcmd 下载</b>（Mod 下载保持直连，避免代理链路导致下载卡死）。保存后立即生效，无需重启。也可用环境变量覆盖：STEAM_PROXY=host:port、STEAM_PROXY_ENABLED=1、STEAM_PROXY_TYPE=socks5、STEAM_PROXY_HOST / STEAM_PROXY_PORT。</div>
+    </div>
+
+    <div class="panel">
+      <h3>自动更新</h3>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="auEnabled" /> 启用自动更新（总开关）
+        </label>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="auDelayEnabled" /> 新增 Mod 后延时触发一次更新
+        </label>
+        <div class="field"><label>延时时间（分钟）</label>
+          <input id="auDelayMinutes" type="number" min="1" step="1" style="min-width:110px;" />
+        </div>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
+          <input type="checkbox" id="auScanEnabled" /> 定时扫描（发现未下载 Mod 时触发）
+        </label>
+        <div class="field"><label>扫描间隔（小时）</label>
+          <input id="auScanHours" type="number" min="1" step="0.5" style="min-width:110px;" />
+        </div>
+      </div>
+      <button class="btn primary" id="saveAutoBtn">保存自动更新设置</button>
+      <div class="hint">两种触发条件可分别开关，均<b>只处理尚未下载的 Mod</b>（已下载的一律跳过，不覆盖、不重复下载）。延时触发在倒计时期间再次新增 Mod 会<b>合并为同一次触发并重新计时</b>。同一时间只允许一个更新任务，任务执行中的触发请求会被跳过（不排队）。下载失败不影响下一次触发，失败明细可在仪表盘「自动更新」面板查看。配置保存后立即生效，并持久化到 config.toml（重启后仍生效）。</div>
+    </div>
+  </section>
+
+  <!-- 清单 -->
+  <section id="tab-manifest" class="tab">
+    <div id="manifestList"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2600);
+}
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (res.status === 401) { showLogin(); const e = new Error("未登录"); e.status = 401; throw e; }
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).detail; } catch (e) {}
+    const e = new Error(detail || String(res.status)); e.status = res.status; throw e;
+  }
+  return res.json();
+}
+function fmtSize(n) {
+  if (n == null) return "-";
+  let u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < u.length-1) { n /= 1024; i++; }
+  return n.toFixed(1) + " " + u[i];
+}
+
+// 登录
+function showLogin() { $("#loginOverlay").style.display = "flex"; }
+function hideLogin() { $("#loginOverlay").style.display = "none"; }
+$("#loginBtn").onclick = async () => {
+  const u = $("#loginUser").value, p = $("#loginPass").value;
+  try {
+    await api("/api/login", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({username:u, password:p})});
+    hideLogin(); boot();
+  } catch (e) { toast("登录失败: " + e.message); }
+};
+$("#logoutBtn").onclick = async () => {
+  await api("/api/logout", {method:"POST"});
+  showLogin(); toast("已登出");
+};
+
+// 标签页
+document.querySelectorAll("nav button[data-tab]").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("nav button[data-tab]").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    $("#tab-" + b.dataset.tab).classList.add("active");
+    if (b.dataset.tab === "dash") loadStatus();
+    if (b.dataset.tab === "games") loadGames();
+    if (b.dataset.tab === "settings") loadSettings();
+    if (b.dataset.tab === "manifest") loadManifest();
+  };
+});
+
+// 仪表盘
+async function loadStatus() {
+  const s = await api("/api/status");
+  const cards = [
+    {k:"steamcmd", v: s.steamcmd_exists ? "已就绪" : "未找到", cls: s.steamcmd_exists?"ok":"err"},
+    {k:"存储目录", v: s.storage_exists ? "存在" : "未创建", cls: s.storage_exists?"ok":"warn"},
+    {k:"配置游戏", v: s.configured_games, cls:""},
+    {k:"配置 Mod", v: s.configured_mods, cls:""},
+    {k:"已下载 Mod", v: s.downloaded_mods, cls:"ok"},
+    {k:"Steam 账号", v: s.steam_account.enabled ? (s.steam_account.username||"已启用") : "匿名", cls: s.steam_account.enabled?"ok":"warn"},
+    ...(s.proxy && s.proxy.enabled
+      ? [{k:"代理", v:`${s.proxy.type} ${s.proxy.endpoint}`, cls:"ok"}]
+      : [{k:"代理", v:"未启用", cls:"warn"}]),
+    ...(s.auto_update && s.auto_update.enabled
+      ? [{k:"自动更新", v:`开启 · 待下载 ${s.auto_update.pending_count}`, cls:"ok"}]
+      : [{k:"自动更新", v:"已关闭", cls:"warn"}]),
+  ];
+  $("#statusCards").innerHTML = cards.map(c =>
+    `<div class="card"><div class="k">${c.k}</div><div class="v"><span class="badge ${c.cls}">${c.v}</span></div></div>`
+  ).join("");
+  $("#syncBtn").disabled = s.sync_running;
+  $("#autoRunBtn").disabled = s.sync_running;
+  $("#syncHint").textContent = s.sync_running ? "更新进行中…" :
+    (s.last_sync_at ? `上次同步: ${new Date(s.last_sync_at*1000).toLocaleString()} (成功 ${s.last_sync_ok||0}/失败 ${s.last_sync_fail||0})` : "尚未同步");
+  // 任务的 Woo 重建：运行中直接续上；已结束且本页无内容则补拉一次完整日志
+  ensureTailFor(s);
+}
+$("#syncBtn").onclick = async () => {
+  try {
+    const r = await api("/api/sync", {method:"POST"});
+    beginTail(r.task_id, "已启动更新（全部 Mod）…");
+  } catch (e) { toast("启动失败: " + e.message); }
+};
+// 手动触发立即更新流程（仅未下载 Mod，复用自动更新的同一逻辑）
+$("#autoRunBtn").onclick = async () => {
+  try {
+    const r = await api("/api/auto_update/trigger", {method:"POST"});
+    if (!r.task_id) { toast(r.message || "没有未下载的 Mod"); loadAuto(); loadStatus(); return; }
+    switchToDash();
+    beginTail(r.task_id, "已启动自动更新（仅未下载 Mod）…");
+    loadStatus();
+    toast(r.message || "已启动自动更新");
+  } catch (e) { toast("触发失败: " + e.message); loadAuto(); loadStatus(); }
+};
+// ============ 日志跟随器：续传 + 重连 + 去重 ============
+// 以前日志是「一次性轮询闭包」：任务 id 只存在 JS 内存里，页面刷新即丢，
+// 且任何一次请求失败都会让递归链彻底断掉。现在收敛为一个可恢复的状态机：
+//   taskId  当前跟随的任务
+//   cursor  已收到的最大日志序号 -> 重连时带 since=cursor 续传，不丢不重
+//   lines   本地行缓冲（含 行id -> 下标的索引），折叠行按 id 原地覆盖更新
+//   token   每次切换任务自增，作废在途的旧请求，杜绝两条链互相打架
+const tail = {
+  taskId: null, cursor: 0, lines: [], index: new Map(),
+  timer: null, token: 0, fails: 0, running: false, shownTask: null, note: null,
+  replay: false,   // true = 刷新后补拉历史已完成任务的日志（不弹提示）
+};
+const MAX_LINES = 3000;   // 前端渲染上限（后端另有 5000 条保留上限）
+
+function renderLog() {
+  const box = $("#syncLog");
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.textContent = tail.lines.length
+    ? tail.lines.map(l => l.text).join("\n")
+    : (tail.note || "尚未执行同步。");
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+function pushLine(text) {   // 本地追加一行（非日志流的提示/汇总）
+  tail.lines.push({seq: -(tail.lines.length + 1), text});
+  renderLog();
+}
+function feedEntries(entries) {
+  // 按「行 id」合并：同一行的后续更新（折叠 ×N）覆盖旧槽位，绝不新增行
+  for (const e of entries || []) {
+    const text = `[${e.time}] ${e.msg}`;
+    const id = e.id != null ? e.id : e.seq;
+    if (tail.index.has(id)) {
+      tail.lines[tail.index.get(id)] = {seq: e.seq, id, text};
+    } else {
+      tail.index.set(id, tail.lines.length);
+      tail.lines.push({seq: e.seq, id, text});
+    }
+    if (e.seq > tail.cursor) tail.cursor = e.seq;   // 游标只前进，天然去重
+  }
+  if (tail.lines.length > MAX_LINES) {
+    tail.lines = tail.lines.slice(-MAX_LINES);
+    tail.index = new Map();
+    tail.lines.forEach((l, i) => { if (l.id != null) tail.index.set(l.id, i); });
+  }
+}
+function stopTimer() { if (tail.timer) { clearTimeout(tail.timer); tail.timer = null; } }
+
+// 开始/恢复跟随某个任务；已在同一任务且链还活着则幂等
+function startTail(taskId, note) {
+  if (!taskId) return;
+  if (tail.taskId === taskId && tail.timer) return;
+  stopTimer();
+  if (tail.taskId !== taskId) {
+    tail.taskId = taskId; tail.cursor = 0; tail.lines = []; tail.index = new Map();
+    tail.note = note || "正在连接任务日志…";
+  }
+  tail.token++; tail.fails = 0;
+  renderLog();
+  tick();
+}
+// 用户手动启动任务：强制重建缓冲（同一个 id 不会重复出现，这里主要是清掉旧内容）
+function beginTail(taskId, note) {
+  stopTimer();
+  tail.taskId = taskId; tail.cursor = 0; tail.lines = []; tail.index = new Map();
+  tail.token++; tail.fails = 0; tail.shownTask = null; tail.note = note || "正在连接任务日志…";
+  tail.replay = false;
+  renderLog(); tick();
+}
+
+async function tick() {
+  const my = tail.token, id = tail.taskId;
+  if (!id) return;
+  try {
+    const t = await api(`/api/sync/${id}?since=${tail.cursor}`);
+    if (my !== tail.token) return;          // 任务已切换，丢弃这一轮
+    tail.fails = 0;
+    if (t.truncated) pushLine("…（服务端已释放更早的历史日志，以下为当前保留部分）");
+    feedEntries(t.logs);
+    renderLog();
+    applyTaskState(t);
+    if (t.status === "running") {
+      tail.running = true;
+      tail.timer = setTimeout(tick, 1000);
+    } else {
+      tail.running = false; stopTimer(); finishTask(t);
+    }
+  } catch (e) {
+    if (my !== tail.token) return;
+    if (e.status === 404) {                 // 任务已从服务端消失（如服务重启）
+      stopTimer(); tail.running = false;
+      $("#syncHint").textContent = "任务已不存在（服务可能已重启），日志停止跟随";
+      return;
+    }
+    if (e.status === 401) {                 // 会话过期：停链等待重新登录
+      stopTimer(); tail.running = false;
+      $("#syncHint").textContent = "会话已过期，请重新登录后继续查看日志";
+      return;
+    }
+    // 断线重连：游标保留 -> 恢复后从断点续传，既不丢也不重复
+    tail.fails++;
+    const wait = Math.min(1000 * Math.pow(2, tail.fails), 10000);
+    $("#syncHint").textContent = `日志连接中断（${e.message}），${Math.round(wait/1000)}s 后重连…`;
+    tail.timer = setTimeout(tick, wait);
+  }
+}
+
+function applyTaskState(t) {
+  const running = t.status === "running";
+  $("#syncBtn").disabled = running;
+  $("#autoRunBtn").disabled = running;
+  if (running) {
+    const idle = t.idle_seconds >= 10 ? ` · ${t.idle_seconds}s 无新输出` : "";
+    $("#syncHint").textContent = `更新进行中… 已运行 ${Math.round(t.elapsed || 0)}s${idle}`;
+  }
+}
+
+function finishTask(t) {
+  tail.shownTask = t.task_id;
+  const replay = tail.replay; tail.replay = false;
+  const s = t.summary || {ok: 0, fail: 0, total: 0};
+  const dur = Math.round(t.elapsed || 0);
+  const failed = (t.results || []).filter(x => !x.ok);
+  if (t.error) {
+    pushLine("");
+    pushLine(`❌ 任务异常终止（耗时 ${dur}s）：${t.error}`);
+    $("#syncHint").textContent = `任务异常终止：${t.error}`;
+    if (!replay) toast("更新任务异常终止，请查看日志");
+  } else if (s.fail > 0) {
+    pushLine("");
+    pushLine(`⚠️ 更新结束（耗时 ${dur}s）：成功 ${s.ok} / 失败 ${s.fail}`);
+    for (const r of failed.slice(0, 10)) {
+      pushLine(`   ✗ ${r.name || r.itemid}：${(r.reason || "未知原因").slice(0, 120)}`);
+    }
+    if (s.fail > 10) pushLine(`   … 其余 ${s.fail - 10} 个失败项已省略`);
+    $("#syncHint").textContent = `更新完成：成功 ${s.ok} / 失败 ${s.fail}（耗时 ${dur}s）`;
+    if (!replay) toast(`更新完成：成功 ${s.ok}，失败 ${s.fail}`);
+  } else {
+    pushLine("");
+    pushLine(`✅ 更新完成（耗时 ${dur}s）：${s.total} 个 Mod 全部成功`);
+    $("#syncHint").textContent = `更新完成：${s.total} 个 Mod 全部成功（耗时 ${dur}s）`;
+    if (!replay) toast("更新完成");
+  }
+  $("#syncBtn").disabled = false;
+  $("#autoRunBtn").disabled = false;
+  if (!replay) { loadStatus(); loadAuto(); }   // 补拉历史时避免多余请求/弹窗
+}
+
+// 刷新/断线后依据 /api/status 自动重新建链
+function ensureTailFor(s) {
+  if (s.sync_running && s.current_task) { tail.replay = false; startTail(s.current_task); return; }
+  // 未在跑：本页还没渲染过日志、且存在已完成任务 -> 补拉一次（覆盖「刚好跑完就刷新」）
+  if (!tail.taskId && !tail.lines.length && s.last_sync_task
+      && tail.shownTask !== s.last_sync_task) {
+    tail.replay = true;
+    startTail(s.last_sync_task, "正在载入上一次任务的日志…");
+  }
+}
+
+// 手动重连：等价于「刷新后的自动重连」，用于验证断线场景
+$("#logReconnectBtn").onclick = () => {
+  if (!tail.taskId) { toast("当前没有可跟随的任务"); loadStatus(); return; }
+  stopTimer(); tail.fails = 0; tick();
+  toast("已重新拉取日志（游标 " + tail.cursor + "）");
+};
+
+// 自动更新状态（仪表盘）
+let autoState = null;
+function fmtRemain(sec) {
+  if (sec == null) return "-";
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return (h ? h + " 小时 " : "") + (h || m ? m + " 分 " : "") + s + " 秒";
+}
+async function loadAuto() {
+  try { autoState = await api("/api/auto_update"); renderAuto(); }
+  catch (e) { $("#autoInfo").textContent = "自动更新状态加载失败: " + e.message; }
+}
+function renderAuto() {
+  const el = $("#autoInfo");
+  if (!autoState) return;
+  const a = autoState;
+  const now = Date.now() / 1000;
+  const lines = [];
+  const badge = a.enabled
+    ? '<span class="badge ok">已开启</span>' : '<span class="badge warn">已关闭</span>';
+  const ways = [];
+  if (a.config.delay_enabled) ways.push(`延时触发（${a.config.delay_minutes} 分钟）`);
+  if (a.config.scan_enabled) ways.push(`定时扫描（每 ${a.config.scan_interval} 分钟）`);
+  lines.push(`状态：${badge} ${a.enabled ? "· " + (ways.join(" + ") || "未启用任何触发条件") : ""}`);
+  lines.push(`未下载 Mod：${a.pending_count} 个`);
+  if (a.enabled) {
+    if (a.next_fire_at) {
+      const remain = Math.max(0, a.next_fire_at - now);
+      lines.push(`下次触发：${new Date(a.next_fire_at * 1000).toLocaleTimeString()}（${a.next_fire_kind}，剩余 ${fmtRemain(remain)}）`);
+    } else {
+      lines.push("下次触发：暂无待执行的触发计划");
+    }
+  }
+  if (a.sync_running) lines.push("⏳ 更新任务进行中，此期间的触发请求将被跳过（不排队）");
+  if (a.last_run_at) {
+    lines.push(`上次自动更新：${new Date(a.last_run_at * 1000).toLocaleString()}（${a.last_trigger || "-"}）· 成功 ${a.last_ok} / 失败 ${a.last_fail}`);
+  }
+  if (a.last_reset_at) {
+    lines.push(`⏱ 计时已重置：${new Date(a.last_reset_at * 1000).toLocaleString()}（${a.last_reset_reason || "更新任务完成"}）`);
+  }
+  if (a.last_error) lines.push(`⚠️ ${a.last_error}`);
+  if (a.last_fail > 0 && a.last_failed_mods.length) {
+    lines.push("失败明细：" + a.last_failed_mods.slice(0, 5).map(m =>
+      `${m.name || m.itemid}${m.reason ? "（" + m.reason.slice(0, 60) + "）" : ""}`).join("；")
+      + (a.last_fail > 5 ? ` …等 ${a.last_fail} 个` : ""));
+  }
+  if (a.skipped > 0) lines.push(`已因任务占用跳过 ${a.skipped} 次触发`);
+  el.innerHTML = lines.join("<br>");
+}
+
+// 游戏 / Mod
+const INSTALL_LABELS = {copy:"原样复制", rename:"重命名", extract:"解压缩"};
+function installOptions(cur) {
+  return Object.entries(INSTALL_LABELS).map(([k, v]) =>
+    `<option value="${k}" ${k === cur ? "selected" : ""}>${v}</option>`).join("");
+}
+async function loadGames() {
+  const c = await api("/api/config");
+  const el = $("#gamesList");
+  if (!c.games.length) { el.innerHTML = `<div class="empty">还没有配置游戏，先在上方添加。</div>`; return; }
+  el.innerHTML = c.games.map(g => {
+    const cur = (g.install && g.install.type) || "copy";
+    return `
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;">${g.name || g.appid} <span style="color:var(--text-dim);font-size:12px;">(AppID ${g.appid})</span></h3>
+        <div>
+          <button class="btn" onclick="updateGame('${g.appid}')">🔄 更新全部</button>
+          <button class="btn" onclick="showAddMod('${g.appid}')">+ Mod</button>
+          <button class="btn danger" onclick="delGame('${g.appid}')">删除游戏</button>
+        </div>
+      </div>
+      <div class="row" style="margin:8px 0 0;">
+        <div class="field"><label>安装方式（决定客户端下载后如何落地）</label>
+          <select id="gInst-${g.appid}" onchange="setGameInstall('${g.appid}')">${installOptions(cur)}</select>
+        </div>
+        <div class="field" id="gExtField-${g.appid}" style="display:${cur === "rename" ? "" : "none"};">
+          <label>重命名后缀</label>
+          <input id="gExt-${g.appid}" value="${((g.install && g.install.params && g.install.params.target_ext) || ".vpk")}"
+                 onchange="setGameInstall('${g.appid}')" style="min-width:110px;" />
+        </div>
+      </div>
+      <div id="modForm-${g.appid}" style="display:none;margin:10px 0;" class="row">
+        <div class="field"><label>Mod ID 或订阅链接</label><input id="mId-${g.appid}" style="min-width:360px;" placeholder="123456789 或 https://steamcommunity.com/sharedfiles/filedetails/?id=123456789" /></div>
+        <div class="field"><label>名称</label><input id="mName-${g.appid}" placeholder="留空可自动获取" /></div>
+        <button class="btn" onclick="fetchModName('${g.appid}')">获取名称</button>
+        <button class="btn primary" onclick="addMod('${g.appid}')">添加</button>
+      </div>
+      <div class="hint" style="margin-top:-4px;">添加时会自动解析该 Mod 在 Steam 创意工坊的依赖项并一并加入（标记为「自动」）。删除主体 Mod 时，仅清理不再被其它 Mod 依赖的「自动」依赖；手动添加的 Mod 不会被自动删除。</div>
+      <div class="mods" id="mods-${g.appid}"></div>
+    </div>
+  `;}).join("");
+  for (const g of c.games) renderMods(g.appid, g.mods);
+}
+async function setGameInstall(appid) {
+  const type = $("#gInst-" + appid).value;
+  const extField = $("#gExtField-" + appid);
+  const extInput = $("#gExt-" + appid);
+  if (extField) extField.style.display = type === "rename" ? "" : "none";
+  const params = type === "rename"
+    ? {target_ext: ((extInput && extInput.value) || ".vpk").trim()} : {};
+  try {
+    await api(`/api/games/${appid}/install`, {method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({type, params})});
+    toast("安装方式已保存");
+  } catch (e) { toast("保存失败: " + e.message); loadGames(); }
+}
+function renderMods(appid, mods) {
+  const el = $("#mods-" + appid);
+  if (!mods.length) { el.innerHTML = `<div style="color:var(--text-dim);font-size:12px;">暂无 Mod</div>`; return; }
+  el.innerHTML = mods.map(m => {
+    const isAuto = m.source === "auto";
+    const srcBadge = isAuto
+      ? '<span class="badge" style="background:rgba(160,160,160,.18);color:#c0c0c0;">自动</span>'
+      : '<span class="badge" style="background:rgba(233,69,96,.18);color:#e94560;">手动</span>';
+    const depInfo = (m.deps && m.deps.length) ? `<span class="meta"> · 依赖 ${m.deps.length}</span>` : "";
+    const linkInfo = m.subscribed_url ? ' · <a style="color:var(--text-dim)" href="'+m.subscribed_url+'" target="_blank">链接</a>' : "";
+    return `
+    <div class="mod-item">
+      <span>${m.name || m.itemid} <span class="meta">(#${m.itemid})</span> ${srcBadge}${depInfo}${linkInfo}</span>
+      <span>
+        <button class="btn" onclick="updateMod('${appid}','${m.itemid}')">🔄 更新</button>
+        <button class="btn danger" onclick="delMod('${appid}','${m.itemid}')">移除</button>
+      </span>
+    </div>`;
+  }).join("");
+}
+function showAddMod(appid) {
+  const f = $("#modForm-" + appid);
+  f.style.display = f.style.display === "none" ? "flex" : "none";
+}
+$("#addGameBtn").onclick = async () => {
+  const appid = $("#gAppid").value.trim();
+  if (!appid) { toast("请输入 AppID"); return; }
+  const itype = $("#gInstall").value;
+  const install_params = itype === "rename"
+    ? {target_ext: ($("#gRenameExt").value || ".vpk").trim()} : {};
+  try {
+    await api("/api/games", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({appid, name:$("#gName").value, description:$("#gDesc").value,
+        install_type: itype, install_params})});
+    $("#gAppid").value = $("#gName").value = $("#gDesc").value = "";
+    toast("已添加游戏（已生成独立配置文件）"); loadGames(); loadStatus();
+  } catch (e) { toast("添加失败: " + e.message); }
+};
+$("#gInstall").onchange = () => {
+  $("#gExtField").style.display = $("#gInstall").value === "rename" ? "" : "none";
+};
+async function delGame(appid) {
+  if (!confirm("确定删除该游戏？其独立配置文件、所有 Mod 配置及已下载的 Mod 文件都将被删除。")) return;
+  try {
+    const r = await api("/api/games/" + appid, {method:"DELETE"});
+    let msg = "已删除游戏";
+    if (r.deleted && r.deleted.length) msg += `，已清理 ${r.deleted.length} 项下载文件`;
+    if (r.errors && r.errors.length) msg += `（${r.errors.length} 个文件删除失败，详见服务端日志）`;
+    toast(msg); loadGames(); loadStatus();
+  } catch (e) { toast("删除失败: " + e.message); }
+}
+async function addMod(appid) {
+  const mod_input = $("#mId-" + appid).value.trim();
+  if (!mod_input) { toast("请输入 Mod ID 或订阅链接"); return; }
+  try {
+    const r = await api("/api/games/" + appid + "/mods", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({mod_input, name:$("#mName-" + appid).value})});
+    $("#mId-" + appid).value = $("#mName-" + appid).value = "";
+    let msg = "已添加 Mod";
+    if (r.promoted) msg = "已将该 Mod 提升为手动添加（不再被自动清理）";
+    else if (r.added_dependencies && r.added_dependencies.length)
+      msg = `已添加 Mod，并自动引入 ${r.added_dependencies.length} 个依赖`;
+    if (r.failed_dependencies && r.failed_dependencies.length)
+      msg += `（${r.failed_dependencies.length} 个依赖解析失败，需联网后重试「更新全部」）`;
+    toast(msg); loadGames(); loadStatus();
+  } catch (e) { toast("添加失败: " + e.message); }
+}
+async function delMod(appid, itemid) {
+  if (!confirm("确定移除该 Mod？已下载的文件与不再被其它 Mod 依赖的自动依赖（含其文件）将被一并删除。")) return;
+  try {
+    const r = await api(`/api/games/${appid}/mods/${itemid}`, {method:"DELETE"});
+    let msg = "已移除 Mod";
+    if (r.removed_auto && r.removed_auto.length)
+      msg += `，并清理 ${r.removed_auto.length} 个不再被依赖的自动依赖`;
+    if (r.deleted && r.deleted.length) msg += `，已删除 ${r.deleted.length} 项下载文件`;
+    if (r.errors && r.errors.length) msg += `（${r.errors.length} 个删除失败）`;
+    toast(msg); loadGames(); loadStatus();
+  } catch (e) { toast("删除失败: " + e.message); }
+}
+
+// 从 Steam 自动获取游戏名称
+$("#gFetchBtn").onclick = async () => {
+  const raw = $("#gAppid").value.trim();
+  if (!raw) { toast("请先填写 AppID 或商店页地址"); return; }
+  try {
+    const r = await api("/api/steam/game/" + encodeURIComponent(raw));
+    $("#gName").value = r.name;
+    toast("已获取游戏名称: " + r.name);
+  } catch (e) { toast("获取失败: " + e.message); }
+};
+
+// 从 Steam 自动获取 Mod 名称
+async function fetchModName(appid) {
+  const raw = $("#mId-" + appid).value.trim();
+  if (!raw) { toast("请先填写 Mod ID 或订阅链接"); return; }
+  try {
+    const r = await api("/api/steam/mod/" + encodeURIComponent(raw));
+    $("#mName-" + appid).value = r.name;
+    toast("已获取 Mod 名称: " + r.name);
+  } catch (e) { toast("获取失败: " + e.message); }
+}
+
+// 切换到仪表盘并打开日志视图
+function switchToDash() {
+  document.querySelectorAll("nav button[data-tab]").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  const nav = document.querySelector('nav button[data-tab="dash"]');
+  if (nav) nav.classList.add("active");
+  $("#tab-dash").classList.add("active");
+}
+
+// 更新整个游戏下的所有 Mod
+async function updateGame(appid) {
+  try {
+    const r = await api(`/api/games/${appid}/update`, {method:"POST"});
+    switchToDash();
+    beginTail(r.task_id, "已启动更新（整游戏）…");
+    loadStatus();
+    toast("已启动更新任务");
+  } catch (e) { toast("启动失败: " + e.message); }
+}
+
+// 更新单个 Mod
+async function updateMod(appid, itemid) {
+  try {
+    const r = await api(`/api/games/${appid}/mods/${itemid}/update`, {method:"POST"});
+    switchToDash();
+    beginTail(r.task_id, "已启动更新（单 Mod）…");
+    loadStatus();
+    toast("已启动更新任务");
+  } catch (e) { toast("启动失败: " + e.message); }
+}
+
+// 设置
+async function loadSettings() {
+  const c = await api("/api/config");
+  const s = c.settings;
+  $("#sCmd").value = s.steamcmd_path; $("#sStore").value = s.storage_dir;
+  $("#sHost").value = s.host; $("#sPort").value = s.port;
+  $("#sBPort").value = s.broadcast_port; $("#sBInt").value = s.broadcast_interval;
+  $("#sBcast").checked = s.enable_broadcast;
+  // 账号与 Steam 信息来自 status
+  const st = await api("/api/status");
+  const a = st.auth_enabled;
+  $("#authEnabled").checked = a;
+  $("#authUser").value = ""; $("#authPass").value = "";
+  const sa = st.steam_account;
+  $("#steamEnabled").checked = sa.enabled;
+  $("#steamUser").value = sa.username || "";
+  $("#steamPass").value = "";
+  $("#steamGuard").value = sa.has_guard_code ? "(已保存)" : "";
+  // 代理配置
+  const p = s.proxy || {};
+  $("#proxyEnabled").checked = !!p.enabled;
+  $("#proxyType").value = p.type || "socks5";
+  $("#proxyHost").value = p.host || "127.0.0.1";
+  $("#proxyPort").value = p.port != null ? p.port : 1080;
+  $("#proxyUser").value = p.username || "";
+  $("#proxyPass").value = p.password || "";
+  // 自动更新配置
+  const au = s.auto_update || {};
+  $("#auEnabled").checked = !!au.enabled;
+  $("#auDelayEnabled").checked = !!au.delay_enabled;
+  $("#auDelayMinutes").value = au.delay_minutes != null ? au.delay_minutes : 5;
+  $("#auScanEnabled").checked = !!au.scan_enabled;
+  $("#auScanHours").value = au.scan_interval_hours != null ? au.scan_interval_hours : 1;
+}
+$("#saveAutoBtn").onclick = async () => {
+  const body = {
+    enabled: $("#auEnabled").checked,
+    delay_enabled: $("#auDelayEnabled").checked,
+    delay_minutes: Number($("#auDelayMinutes").value) || 1,
+    scan_enabled: $("#auScanEnabled").checked,
+    scan_interval_hours: Number($("#auScanHours").value) || 1,
+  };
+  try {
+    await api("/api/auto_update", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    toast("自动更新设置已保存（立即生效）"); loadAuto(); loadStatus();
+  } catch (e) { toast("保存失败: " + e.message); }
+};
+$("#saveSettingsBtn").onclick = async () => {
+  const body = {
+    steamcmd_path: $("#sCmd").value, storage_dir: $("#sStore").value,
+    host: $("#sHost").value, port: Number($("#sPort").value),
+    broadcast_port: Number($("#sBPort").value), broadcast_interval: Number($("#sBInt").value),
+    enable_broadcast: $("#sBcast").checked,
+  };
+  await api("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  toast("基础设置已保存"); loadStatus();
+};
+$("#saveProxyBtn").onclick = async () => {
+  const body = { proxy: {
+    enabled: $("#proxyEnabled").checked,
+    type: $("#proxyType").value,
+    host: $("#proxyHost").value,
+    port: Number($("#proxyPort").value) || 1080,
+    username: $("#proxyUser").value,
+    password: $("#proxyPass").value,
+  }};
+  await api("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  toast("代理设置已保存（立即生效）"); loadSettings(); loadStatus();
+};
+$("#saveAuthBtn").onclick = async () => {
+  const body = {username: $("#authUser").value || undefined,
+    password: $("#authPass").value || undefined, enabled: $("#authEnabled").checked};
+  await api("/api/auth", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  toast("账号设置已保存"); loadSettings();
+};
+$("#saveSteamBtn").onclick = async () => {
+  const body = {enabled: $("#steamEnabled").checked, username: $("#steamUser").value,
+    password: $("#steamPass").value || undefined, guard_code: $("#steamGuard").value === "(已保存)" ? "" : $("#steamGuard").value};
+  await api("/api/steam", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  toast("Steam 账号已保存"); loadSettings(); loadStatus();
+};
+$("#testSteamBtn").onclick = async () => {
+  try {
+    const r = await api("/api/steam/login", {method:"POST"});
+    const box = $("#steamTestLog"); box.style.display = "block";
+    box.textContent = (r.logs && r.logs.length) ? r.logs.join("\n") : (r.ok ? "✅ 登录成功" : "❌ 登录失败");
+    if (r.needs_guard_code) toast("需要设备授权码：填入 Guard 码后保存并重新测试");
+    else if (r.ok) toast("Steam 登录成功");
+    else toast("登录失败，请查看日志");
+  } catch (e) { toast("测试失败: " + e.message); }
+};
+
+// 清单
+async function loadManifest() {
+  const r = await api("/api/manifest");
+  const el = $("#manifestList");
+  if (!r.mods.length) { el.innerHTML = `<div class="empty">还没有已下载的 Mod，请先执行同步。</div>`; return; }
+  el.innerHTML = r.mods.map(m => `
+    <div class="panel">
+      <h3>${m.name || m.itemid} <span style="color:var(--text-dim);font-size:12px;">(AppID ${m.appid} #${m.itemid})</span></h3>
+      <div class="hint">文件数: ${m.file_count} · 总大小: ${fmtSize(m.total_size)}</div>
+      <table><thead><tr><th>文件</th><th>大小</th></tr></thead><tbody>
+        ${m.files.map(f => `<tr><td>${f.name}</td><td>${fmtSize(f.size)}</td></tr>`).join("")}
+      </tbody></table>
+    </div>
+  `).join("");
+}
+
+// 初始化
+async function boot() {
+  try {
+    await loadStatus();
+    hideLogin();          // 会话有效（/api/status 200）-> 收起登录框
+    await loadAuto();
+  } catch (e) {
+    if (e.message !== "未登录") toast(e.message);   // 401 时 api() 已 showLogin()
+  }
+}
+boot();
+setInterval(() => {
+  if ($("#tab-dash").classList.contains("active") && $("#loginOverlay").style.display === "none") {
+    loadStatus();
+    loadAuto();
+  }
+}, 5000);
+// 倒计时按秒刷新（仅重绘，不请求后端）
+setInterval(() => {
+  if (autoState && $("#tab-dash").classList.contains("active")
+      && $("#loginOverlay").style.display === "none") renderAuto();
+}, 1000);
+</script>
+</body>
+</html>
