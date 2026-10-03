@@ -3,3 +3,4 @@ uvicorn[standard]>=0.27
 tomlkit>=0.12
 PySocks>=1.7
 cryptography>=42
+requests>=2.32

@@ -36,7 +36,13 @@ from .install import available_types, get_install_type
 from . import proxy as proxy_module
 from .security import new_session_token
 from .steamcmd_runner import SteamCMD
-from .steam_meta import SteamMetaError, configure_proxy, fetch_game_name, fetch_mod_name
+from .steam_meta import (
+    SteamMetaError,
+    configure_proxy,
+    fetch_game_name,
+    fetch_mod_name,
+    parse_mod_url,
+)
 from .sync_manager import SyncManager
 
 # ------------------------- 全局对象 -------------------------
@@ -438,9 +444,33 @@ def api_steam_game_name(appid: str):
     return {"appid": norm, "name": name}
 
 
+@api.get("/steam/mod")
+def api_steam_mod_meta(mod_input: str = ""):
+    """按 Mod ID 或**创意工坊链接**获取名称（自动填充）。
+
+    独立于此前的 /steam/mod/{itemid}：那里的路径参数无法承载完整链接
+    （链接含 `/`，即便前端 encodeURIComponent 编码为 %2F，Starlette 仍会
+    把它当分隔符参与路由匹配 -> 直接 404），因此链接必须从**查询参数**传，
+    这里统一由 parse_mod_url 解析。
+    """
+    if not mod_input.strip():
+        raise HTTPException(status_code=400, detail="请输入 Mod ID 或创意工坊链接")
+    try:
+        itemid = parse_mod_url(mod_input)
+    except SteamMetaError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        name = fetch_mod_name(itemid)
+    except SteamMetaError as e:
+        raise HTTPException(status_code=502, detail=f"获取 Mod 名称失败: {e}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"获取 Mod 名称失败: {e}")
+    return {"itemid": itemid, "name": name}
+
+
 @api.get("/steam/mod/{itemid}")
 def api_steam_mod_name(itemid: str):
-    """从 Steam 创意工坊获取 Mod 名称（自动填充）。"""
+    """从 Steam 创意工坊获取 Mod 名称（自动填充）。Mod ID 为纯数字时使用。"""
     # 校验为数字 ID
     if not itemid.isdigit():
         try:

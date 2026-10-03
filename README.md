@@ -33,7 +33,7 @@
   - 若把被自动引入的依赖手动添加，则**提升为「手动」**（不再被自动清理）
 - **文件分发**：`/list`、`/files/{game}`、`/download/{game}/{path}`（兼容 demo 客户端，**公开**）
 - **局域网广播**：可选 UDP 广播，便于客户端自动发现
-- **代理支持（socks5）**：仅 Steam 网页访问（商店 / 社区 / API）走代理；steamcmd 下载不使用本代理，详见下方「代理配置」
+- **代理支持**：仅 Steam 网页访问（商店 / 社区 / API）走代理，经 `requests` 发起请求；steamcmd 下载不使用本代理，详见下方「代理配置」
 - **TOML 配置**：主配置 `config.toml` + 各游戏独立 `games/<AppID>.toml`
 
 ### 目录结构
@@ -50,7 +50,7 @@ game_sync/
 │   ├── broadcast.py         # 局域网广播
 │   ├── file_dist.py         # 文件分发 + 分组清单/下载解析
 │   ├── install.py           # 服务端安装类型（copy/rename/extract，模块化）
-│   ├── proxy.py             # socks5/http/https 代理配置（仅 Steam 网页访问）
+│   ├── proxy.py             # socks5/http/https 代理配置解析（仅 Steam 网页访问）
 │   └── templates/index.html # Web 管理界面
 ├── client/                  # 桌面客户端（tkinter，纯标准库）
 │   ├── config.py            # 硬编码 AppID + 默认服务端地址 + 运行期配置（本地路径）
@@ -89,7 +89,7 @@ python -m app.server
 ```
 
 > 若使用系统 Python，也可：`python -m venv venv && venv/bin/pip install -r requirements.txt`
-> （Linux/macOS 下解释器为 `venv/bin/python`）。依赖含 `fastapi / uvicorn / tomlkit / PySocks / cryptography`。
+> （Linux/macOS 下解释器为 `venv/bin/python`）。依赖含 `fastapi / uvicorn / tomlkit / requests / PySocks / cryptography`。
 
 ### 使用流程
 
@@ -163,7 +163,9 @@ Mod 下载后位于：
 
 ### 代理配置
 
-为 **Steam 网页访问（商店 / 社区 / API）** 指定出口代理，兼容 http / https(socks5目前测试经常遇到问题，不建议使用)。配置可通过 `config.toml` 的 `[proxy]` 段或环境变量指定地址与端口，**发起请求时自动生效**。
+为 **Steam 网页访问（商店 / 社区 / API）** 指定出口代理，兼容 `http` / `https` / `socks5`。配置可通过 `config.toml` 的 `[proxy]` 段或环境变量指定地址与端口，**发起请求时自动生效**。
+
+请求由 `requests` 发起（`steam_meta.py`），代理通过 `Session.proxies` 注入：`socks5` 会交由 PySocks 处理并**远程解析 DNS**（避免域名被本地污染）；`http` / `https` 直接作为代理地址。未启用时清空 `proxies`，此时 `requests` 仍会读取系统 `*_proxy` 环境变量。
 
 **生效范围**
 

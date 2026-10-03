@@ -201,10 +201,10 @@
     </div>
 
     <div class="panel">
-      <h3>代理设置（steamcmd 与 Steam 网页访问出口）</h3>
+      <h3>代理设置（Steam 网页访问出口）</h3>
       <div class="row">
         <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
-          <input type="checkbox" id="proxyEnabled" /> 启用代理（强制 steamcmd 下载与 Steam 商店/社区/API 请求经代理）
+          <input type="checkbox" id="proxyEnabled" /> 启用代理（Steam 商店/社区/API 请求经代理）
         </label>
       </div>
       <div class="row">
@@ -223,7 +223,7 @@
         <div class="field"><label>密码（可选）</label><input id="proxyPass" type="password" /></div>
       </div>
       <button class="btn primary" id="saveProxyBtn">保存代理设置</button>
-      <div class="hint">仅用于 <b>Steam 网页请求</b>（获取游戏名 / Mod 名称 / 工坊依赖），通过 PySocks 经 SOCKS5（远程解析 DNS）；<b>不作用于 steamcmd 下载</b>（Mod 下载保持直连，避免代理链路导致下载卡死）。保存后立即生效，无需重启。也可用环境变量覆盖：STEAM_PROXY=host:port、STEAM_PROXY_ENABLED=1、STEAM_PROXY_TYPE=socks5、STEAM_PROXY_HOST / STEAM_PROXY_PORT。</div>
+      <div class="hint">仅用于 <b>Steam 网页请求</b>（获取游戏名 / Mod 名称 / 工坊依赖），经 <b>requests</b> 发起（socks5 走远程 DNS 解析）；<b>不作用于 steamcmd 下载</b>（Mod 下载保持直连，避免代理链路导致下载卡死）。保存后立即生效，无需重启。也可用环境变量覆盖：STEAM_PROXY=host:port、STEAM_PROXY_ENABLED=1、STEAM_PROXY_TYPE=socks5、STEAM_PROXY_HOST / STEAM_PROXY_PORT。</div>
     </div>
 
     <div class="panel">
@@ -277,6 +277,49 @@ async function api(path, opts) {
     const e = new Error(detail || String(res.status)); e.status = res.status; throw e;
   }
   return res.json();
+}
+// ---------- 长时间操作的等待状态 ----------
+// 获取名称/添加 Mod 都要访问 Steam（含重试，可能十几秒），不给出等待反馈
+// 会让界面看起来卡死。这里把按钮置 disabled 并改文案，操作结束必须 restore。
+function busyBtn(btn) {
+  if (!btn) return () => {};
+  if (!btn.dataset.oldText) btn.dataset.oldText = btn.textContent;
+  btn.dataset.oldText = btn.textContent;
+  btn.disabled = true;
+  btn.style.opacity = "0.6";
+  return () => { btn.disabled = false; btn.style.opacity = ""; };
+}
+function restoreBtn(btn, text) {
+  if (!btn) return;
+  btn.disabled = false; btn.style.opacity = "";
+  if (text != null) btn.textContent = text;
+}
+// Mod 表单下方的持久提示条：失败原因要能被看清并可复查，
+// toast 几秒就消失，不足以承担这个责任。
+// 注意：loadGames() 会重建卡片 DOM，故保留一份状态，重绘后再贴回去。
+const _modMsgCache = {};
+function modMsg(appid, kind, title, lines) {
+  _modMsgCache[appid] = {kind, title, lines: lines || []};
+  _paintModMsg(appid);
+}
+function _paintModMsg(appid) {
+  const el = $("#modMsg-" + appid);
+  const st = _modMsgCache[appid];
+  if (!el || !st) return;
+  const COLORS = {ok: "var(--success)", warn: "var(--warning)", err: "var(--error)"};
+  const color = COLORS[st.kind] || "var(--text-dim)";
+  const body = st.lines.filter(Boolean)
+    .map(l => `<div style="margin-top:3px;">· ${l}</div>`).join("");
+  el.style.display = "block";
+  el.style.borderLeft = `3px solid ${color}`;
+  el.style.background = "rgba(255,255,255,0.04)";
+  el.innerHTML = `<div style="color:${color};">${st.title}</div>${body}`;
+}
+function repaintModMsg(appid) { _paintModMsg(appid); }
+function modMsgClear(appid) {
+  delete _modMsgCache[appid];
+  const el = $("#modMsg-" + appid);
+  if (el) { el.style.display = "none"; el.innerHTML = ""; }
 }
 function fmtSize(n) {
   if (n == null) return "-";
@@ -609,9 +652,10 @@ async function loadGames() {
       <div id="modForm-${g.appid}" style="display:none;margin:10px 0;" class="row">
         <div class="field"><label>Mod ID 或订阅链接</label><input id="mId-${g.appid}" style="min-width:360px;" placeholder="123456789 或 https://steamcommunity.com/sharedfiles/filedetails/?id=123456789" /></div>
         <div class="field"><label>名称</label><input id="mName-${g.appid}" placeholder="留空可自动获取" /></div>
-        <button class="btn" onclick="fetchModName('${g.appid}')">获取名称</button>
-        <button class="btn primary" onclick="addMod('${g.appid}')">添加</button>
+        <button class="btn" id="mFetchBtn-${g.appid}" onclick="fetchModName('${g.appid}')">获取名称</button>
+        <button class="btn primary" id="mAddBtn-${g.appid}" onclick="addMod('${g.appid}')">添加</button>
       </div>
+      <div id="modMsg-${g.appid}" style="display:none;margin:0 0 8px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.6;"></div>
       <div class="hint" style="margin-top:-4px;">添加时会自动解析该 Mod 在 Steam 创意工坊的依赖项并一并加入（标记为「自动」）。删除主体 Mod 时，仅清理不再被其它 Mod 依赖的「自动」依赖；手动添加的 Mod 不会被自动删除。</div>
       <div class="mods" id="mods-${g.appid}"></div>
     </div>
@@ -654,6 +698,7 @@ function renderMods(appid, mods) {
 function showAddMod(appid) {
   const f = $("#modForm-" + appid);
   f.style.display = f.style.display === "none" ? "flex" : "none";
+  modMsgClear(appid);   // 重新打开表单时清掉上一次的结论
 }
 $("#addGameBtn").onclick = async () => {
   const appid = $("#gAppid").value.trim();
@@ -684,19 +729,54 @@ async function delGame(appid) {
 }
 async function addMod(appid) {
   const mod_input = $("#mId-" + appid).value.trim();
-  if (!mod_input) { toast("请输入 Mod ID 或订阅链接"); return; }
+  if (!mod_input) {
+    modMsg(appid, "warn", "请输入 Mod ID 或创意工坊订阅链接。");
+    return;
+  }
+  modMsgClear(appid);
+  const btn = $("#mAddBtn-" + appid);
+  const restore = busyBtn(btn);
+  btn.textContent = "添加中…";
+  // 依赖会被级联解析，每级都要访问 Steam，耗时可达数十秒
+  modMsg(appid, "ok", "正在添加并解析依赖，请稍候（依赖越多耗时越长，勿重复点击）…");
   try {
     const r = await api("/api/games/" + appid + "/mods", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({mod_input, name:$("#mName-" + appid).value})});
     $("#mId-" + appid).value = $("#mName-" + appid).value = "";
     let msg = "已添加 Mod";
+    const lines = [];
     if (r.promoted) msg = "已将该 Mod 提升为手动添加（不再被自动清理）";
     else if (r.added_dependencies && r.added_dependencies.length)
       msg = `已添加 Mod，并自动引入 ${r.added_dependencies.length} 个依赖`;
-    if (r.failed_dependencies && r.failed_dependencies.length)
-      msg += `（${r.failed_dependencies.length} 个依赖解析失败，需联网后重试「更新全部」）`;
-    toast(msg); loadGames(); loadStatus();
-  } catch (e) { toast("添加失败: " + e.message); }
+    toast(msg);
+
+    // 依赖/名称结论：**不允许静默通过**，能确定或不能确定都要写清楚
+    const failed = r.failed_dependencies || [];
+    const warns = r.dependency_warnings || [];
+    if (!failed.length && !warns.length && !r.name_missing) {
+      const n = (r.added_dependencies || []).length;
+      modMsg(appid, "ok", `已添加 Mod ${r.itemid}`,
+        [n ? `已自动引入 ${n} 个依赖，依赖信息完整` : "无依赖（已确认）"]);
+    } else {
+      const parts = [];
+      if (r.name_missing) parts.push("未自动获取到 Mod 名称，可稍后手动补全");
+      if (failed.length) parts.push(`${failed.length} 个条目未能解析，需联网后重试`);
+      if (warns.length) parts.push(`${warns.length} 个条目的依赖未能确认`);
+      modMsg(appid, failed.length ? "err" : "warn",
+        `已添加，但有些信息没补全：${parts.join("；")}`,
+        failed.map(f => `Mod ${f.itemid} 解析失败：${f.reason}`)
+          .concat(warns.map(w => `Mod ${w.itemid}：${w.reason}`)));
+    }
+    loadGames(); loadStatus();
+    repaintModMsg(appid);   // 卡片被重绘后把结论贴回去
+  } catch (e) {
+    modMsg(appid, "err", "添加失败", [`服务端返回：${e.message}`]);
+    toast("添加失败: " + e.message);
+  } finally {
+    restoreBtn(btn, "添加");
+    restore();
+    repaintModMsg(appid);
+  }
 }
 async function delMod(appid, itemid) {
   if (!confirm("确定移除该 Mod？已下载的文件与不再被其它 Mod 依赖的自动依赖（含其文件）将被一并删除。")) return;
@@ -724,13 +804,29 @@ $("#gFetchBtn").onclick = async () => {
 
 // 从 Steam 自动获取 Mod 名称
 async function fetchModName(appid) {
-  const raw = $("#mId-" + appid).value.trim();
-  if (!raw) { toast("请先填写 Mod ID 或订阅链接"); return; }
+  const input = $("#mId-" + appid);
+  const raw = input.value.trim();
+  if (!raw) { modMsg(appid, "warn", "请先填写 Mod ID 或创意工坊订阅链接。"); return; }
+  const btn = $("#mFetchBtn-" + appid);
+  const restore = busyBtn(btn);
+  btn.textContent = "获取中…";
+  modMsg(appid, "ok", "正在从 Steam 获取名称，请稍候（最长约 1 分钟）…");
   try {
-    const r = await api("/api/steam/mod/" + encodeURIComponent(raw));
+    // 链接必须从查询参数传：整条 URL 含 "/"，走路径参数会被路由判为 404
+    const r = await api("/api/steam/mod?mod_input=" + encodeURIComponent(raw));
     $("#mName-" + appid).value = r.name;
-    toast("已获取 Mod 名称: " + r.name);
-  } catch (e) { toast("获取失败: " + e.message); }
+    modMsg(appid, "ok", `已获取名称：${r.name}`, [`Mod ID: ${r.itemid}`]);
+    toast("已获取名称: " + r.name);
+  } catch (e) {
+    const why = e.status === 400 ? "输入无法解析（既不是纯数字 ID，也不是含 id= 的工坊链接）"
+      : e.status === 502 ? "无法访问 Steam（网络失败/超时/代理异常/页面结构变化）"
+      : "请求失败";
+    modMsg(appid, "err", "获取名称失败", [why, `服务端返回：${e.message}`]);
+    toast("获取失败: " + e.message);
+  } finally {
+    restoreBtn(btn, "获取名称");
+    restore();
+  }
 }
 
 // 切换到仪表盘并打开日志视图

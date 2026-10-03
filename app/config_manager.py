@@ -26,6 +26,7 @@ from .steam_meta import (
     fetch_game_name,
     fetch_mod_details,
     parse_game_url,
+    parse_mod_url,
 )
 
 DEFAULT_ADMIN_USER = "admin"
@@ -36,6 +37,41 @@ DEFAULT_INSTALL_TYPE = "copy"
 
 # 依赖解析最大递归深度，避免异常深的依赖树拖垮添加操作
 _MAX_DEP_DEPTH = 6
+
+
+def _brief_reason(e: Exception) -> str:
+    """把 Steam 元数据异常翻译成用户看得懂的中文原因。
+
+    steam_meta 抛出的原文往往很长（含出口描述、重试次数、底层异常），
+    这里按典型症状归类并保留原文摘要，便于界面直接展示。
+    """
+    msg = str(e).strip()
+    low = msg.lower()
+    rules = [
+        ("429", "Steam 限流（429），好一会儿都拉不下来"),
+        ("timed out", "网络超时"),
+        ("timeout", "网络超时"),
+        ("eof occurred", "TLS/代理链路中断（SSL EOF）"),
+        ("incompleteread", "传输中断（响应体未读完）"),
+        ("name or service not known", "域名解析失败"),
+        ("getaddrinfo", "域名解析失败"),
+        ("nodename nor servname", "域名解析失败"),
+        ("connection refused", "连接被拒绝（目标端口不可达）"),
+        ("connection reset", "连接被重置"),
+        ("network is unreachable", "网络不可达"),
+        ("no route to host", "网络不可达"),
+        ("certificate", "证书校验失败"),
+        ("proxy", "代理连接失败"),
+        ("socks", "代理连接失败"),
+        ("ssl", "TLS 握手失败"),
+        ("403", "Steam 拒绝访问（403）"),
+        ("401", "鉴权失败（401）"),
+        ("http 5", "Steam 服务端错误"),
+    ]
+    for key, zh in rules:
+        if key in low:
+            return f"{zh}：{msg[:160]}"
+    return msg[:200] or "未知原因"
 
 
 class ConfigError(Exception):
@@ -553,16 +589,12 @@ class ConfigManager:
     # ------------------------- Mod -------------------------
     @staticmethod
     def normalize_mod_input(text: str):
-        """将用户输入（纯 ID 或订阅链接）解析为 (itemid, subscribed_url)。"""
-        text = (text or "").strip()
-        if not text:
-            raise ConfigError("Mod 输入不能为空")
-        if re.fullmatch(r"\d+", text):
-            return text, ""
-        m = re.search(r"[?&]id=(\d+)", text)
-        if m:
-            return m.group(1), text
-        raise ConfigError("无法从输入中解析出 Mod ID（应为纯数字或包含 ?id= 的订阅链接）")
+        """将用户输入（纯 ID 或创意工坊链接）解析为 (itemid, subscribed_url)。"""
+        try:
+            return parse_mod_url(text), ("" if re.fullmatch(r"\d+", (text or "").strip())
+                                         else (text or "").strip())
+        except Exception as e:  # noqa: BLE001
+            raise ConfigError(str(e)) from e
 
     @staticmethod
     def normalize_game_input(text: str):
@@ -580,7 +612,11 @@ class ConfigManager:
           - promoted:          若主体 Mod 此前为 auto（自动引入），本次手动添加后提升为 manual
           - added_dependencies: 本次自动引入的依赖 Mod 列表 [{itemid, name}]
           - skipped_existing:   已存在（未被重复添加）的依赖 itemid 列表
-          - failed_dependencies: 依赖解析失败（通常因无网络）的 itemid 列表
+          - failed_dependencies: 依赖解析失败的输入 [{itemid, reason}]
+          - dependency_warnings:  依赖**未能确认**（不是确定为无依赖）的输入 [{itemid, reason}]
+
+        两者都带 reason：网络失败/超时/页面被 Steam 拦截/页面无依赖区块等，
+        由上层直接展示给用户——不允许在无依赖信息的情况下静默通过。
 
         依赖以 source="auto" 写入；已存在的 Mod 不会重复添加。
         若把已存在的 auto Mod 手动添加，则提升为 manual（不再被自动清理）。
@@ -599,6 +635,7 @@ class ConfigManager:
             "added_dependencies": [],
             "skipped_existing": [],
             "failed_dependencies": [],
+            "dependency_warnings": [],
         }
 
         existing = self._find_mod(gdoc, itemid)
@@ -626,6 +663,13 @@ class ConfigManager:
         if resolve_deps and result["added_main"]:
             self._resolve_deps(gdoc, itemid, visited=set(), depth=0, result=result)
 
+        # 主体名称仍未取到（用户留空且 Steam 拉取失败）时必须标记出来：
+        # 界面据此明确告知"未自动获取到名称"，而不是留一个空名字让用户困惑
+        main_mod = self._find_mod(gdoc, itemid)
+        result["name_missing"] = bool(
+            main_mod is not None and not (main_mod.get("name") or "").strip()
+        )
+
         self._save_game_doc(appid, gdoc)
         return result
 
@@ -645,9 +689,14 @@ class ConfigManager:
             det = fetch_mod_details(key)
             name = det.get("name") or ""
             deps = det.get("dependencies") or []
-        except SteamMetaError:
-            result["failed_dependencies"].append(key)
+        except SteamMetaError as e:
+            # 带上具体原因（网络失败/超时/页面被拦截…），供界面明确告知用户
+            result["failed_dependencies"].append(
+                {"itemid": key, "reason": _brief_reason(e)})
             return
+        if det.get("warning"):
+            result["dependency_warnings"].append(
+                {"itemid": key, "reason": det["warning"]})
 
         existing = self._find_mod(gdoc, key)
         if existing is None:
