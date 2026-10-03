@@ -576,8 +576,12 @@ def api_delete_mod(appid: str, itemid: str):
     except ConfigError as e:
         raise HTTPException(status_code=404, detail=str(e))
     # 配置删除成功后，同步清理主体与级联孤儿依赖的已下载文件
-    files = sync_manager.delete_mod_files(appid, result["removed"] + result["removed_auto"])
-    return {"ok": True, **result, **files}
+    removed_ids = result["removed"] + result["removed_auto"]
+    files = sync_manager.delete_mod_files(appid, removed_ids)
+    # 关键：文件删除后必须再摘掉 ACF 里的下载记录，否则 steamcmd 认为「已下载」
+    # 而跳过重下，导致该 Mod 再也下载不回来
+    acf = sync_manager.sync_acf_records(appid, removed_ids)
+    return {"ok": True, **result, **files, "acf": acf}
 
 
 # ------------------------- 设置 -------------------------

@@ -30,6 +30,7 @@
   - 明确区分**「手动」**（用户添加）与**「自动」**（依赖自动引入）两种来源，界面以标签区分
   - 删除主体 Mod 时，仅清理**不再被任何手动 Mod 依赖**的「自动」依赖；用户手动单独添加的 Mod 即使依赖关系消失也**保留**，不会被自动删除
   - 删除 Mod / 游戏时**同步删除已下载文件**（Mod 目录与 extract 的 zip 缓存；删除游戏则清空整个下载目录）；同步任务运行中删除返回 409
+  - 删除 Mod / 游戏时还会**维护 steamcmd 的下载记录**（`appworkshop_<appid>.acf`），细节见下方「ACF 下载记录维护」
   - 若把被自动引入的依赖手动添加，则**提升为「手动」**（不再被自动清理）
 - **文件分发**：`/list`、`/files/{game}`、`/download/{game}/{path}`（兼容 demo 客户端，**公开**）
 - **局域网广播**：可选 UDP 广播，便于客户端自动发现
@@ -46,6 +47,7 @@ game_sync/
 │   ├── steamcmd_runner.py   # steamcmd 封装（下载 / 登录 / +runscript 脚本执行）
 │   ├── steam_meta.py        # 从 Steam 获取游戏/Mod 名称、解析依赖、解析地址
 │   ├── sync_manager.py      # 同步任务与清单扫描（含"仅未下载"目标计算）
+│   ├── steam_acf.py         # ACF（Valve KeyValues）读写：删除 Mod/游戏时维护下载记录
 │   ├── auto_updater.py      # 自动更新调度（延时触发 + 定时扫描，仅未下载）
 │   ├── broadcast.py         # 局域网广播
 │   ├── file_dist.py         # 文件分发 + 分组清单/下载解析
@@ -108,6 +110,7 @@ python -m app.server
    只更新尚未下载的 Mod。**已下载清单** 查看结果。
 7. **删除级联**：移除某个 Mod 时，若其「自动」依赖不再被任何**手动**添加的 Mod 依赖，则一并清理；
    手动添加的 Mod 始终保留。把自动依赖手动添加一次即可将其「提升」为手动（不再被自动清理）。
+   删除的同时会清掉已下载文件与 steamcmd 的 ACF 下载记录，见「ACF 下载记录维护」。
 
 
 ### 自动更新
@@ -158,6 +161,33 @@ scan_interval = 5           # 扫描间隔（分钟）
 
 Mod 下载后位于：
 `<存储目录>/<appid>/steamapps/workshop/content/<appid>/<itemid>/`
+
+### ACF 下载记录维护
+
+steamcmd 判断某个 Mod「是否已下载」**不看文件是否存在**，而是看
+`appworkshop_<appid>.acf` 里有没有该 itemid 的记录。只删文件不删记录时，
+steamcmd 会认为该 Mod 已安装并直接跳过 `workshop_download_item`，
+导致「删掉再重新下载」永远拿不回文件。因此删除操作会连带维护 ACF：
+
+| 操作 | ACF 处理 |
+|------|----------|
+| 删除 Mod | 从 `WorkshopItemsInstalled` 与 `WorkshopItemDetails` 中**精确摘除**该 itemid，其余条目与标量字段原样保留 |
+| 删除游戏 | **整体删除** `appworkshop_<appid>.acf` |
+
+**查找位置**（两处都探测，前者优先）
+
+1. `<存储目录>/<appid>/steamapps/workshop/appworkshop_<appid>.acf` — 配置了 `+force_install_dir` 时的落点
+2. steamcmd 自身目录的 `steamapps/workshop/` — 未配置 `+force_install_dir` 时的落点
+
+**设计约束**
+
+- **保序 + 逐字节保真**：解析与序列化使用 `OrderedDict`，只改写目标条目，未涉及的键值**一个字节都不变**（含 TAB 缩进、键值间 2 个 TAB、LF 行尾）
+- **`SizeOnDisk` 不重算**：其口径含磁盘块对齐，与各 Mod `size` 之和并不相等；删除记录后保持原值，由 steamcmd 下次运行时自行修正
+- **无匹配则不改写**：要删的 Mod 本就无记录时直接返回，不产生任何文件改动
+- **原子写入**：先写 `.tmp` 再 `os.replace`，中途失败不会留下半个文件
+- **容错不中断**：ACF 缺失/解析失败/无写权限都只记录到返回结果的 `error` 字段，不会让删除操作失败；界面会提示
+
+> 实现见 `app/steam_acf.py`；测试见 `tests/test_steam_acf.py`（含对真实 ACF 的逐字节往返校验）。
 
 
 ### 代理配置

@@ -98,6 +98,10 @@ class SteamCMD:
                     return c
         return p
 
+    def resolve(self) -> Path:
+        """公开版路径解析：供外部模块定位 steamcmd 根目录（如查找 ACF）。"""
+        return self._resolve()
+
     def version(self) -> str:
         exe = self._resolve()
         if not exe.exists():

@@ -16,6 +16,8 @@ import uuid
 from pathlib import Path
 
 from .config_manager import ConfigError, ConfigManager
+from .steam_acf import remove_acf_file as acf_remove_file
+from .steam_acf import remove_items as acf_remove_items
 from .steamcmd_runner import SteamCMD, SteamCMDError
 
 
@@ -162,6 +164,59 @@ class SyncManager:
     def item_dir(self, appid: str, itemid: str) -> Path:
         return self.content_dir_for(appid) / str(itemid)
 
+    def acf_dir(self, appid: str) -> Path:
+        """该游戏 ACF 所在目录：<storage>/<appid>/steamapps/workshop。"""
+        return self.install_dir_for(appid) / "steamapps" / "workshop"
+
+    def _acf_extra_dirs(self) -> list[Path]:
+        """ACF 的备用查找目录。
+
+        steamcmd 未配 `+force_install_dir` 时，`appworkshop_<appid>.acf` 会落在
+        **steamcmd 安装目录**的 `steamapps/workshop/`，而不是我们的下载目录。
+        这里把 steamcmd 所在目录也纳入查找范围，两种布局都能命中。
+        """
+        out: list[Path] = []
+        try:
+            raw = str(self.config.get_settings().get("steamcmd_path") or "").strip()
+            if not raw:
+                return out
+            exe = SteamCMD(raw).resolve()
+            out.append(exe.parent)      # steamcmd.exe / steamcmd.sh 所在目录
+        except Exception:  # noqa: BLE001  路径未配置/异常时忽略备用位置
+            pass
+        return out
+
+    def sync_acf_records(self, appid: str, itemids: list[str]) -> dict:
+        """把若干 Mod 的下载记录从 ACF 中摘除。
+
+        **必须在删除 Mod 文件之后调用**：文件没了但 ACF 里仍记着，steamcmd
+        会认定该 Mod 已下载而跳过重下（删除后无法再取回文件）。详见 steam_acf 模块。
+
+        返回 {"acf": 相对/绝对路径或 None, "removed": [...], "missing": [...], "error": ...}
+        """
+        try:
+            appid = self._safe_id(appid, "appid")
+        except ValueError as e:
+            return {"acf": None, "removed": [], "missing": [], "error": str(e)}
+        res = acf_remove_items(
+            appid, itemids,
+            install_dir=self.install_dir_for(appid),
+            extra_dirs=self._acf_extra_dirs(),
+        )
+        path = res.get("path")
+        rel = None
+        if path:
+            try:
+                rel = str(Path(path).relative_to(self.storage_abs()))
+            except ValueError:
+                rel = path       # 落在 storage 之外（如 steamcmd 目录）就报绝对路径
+        return {
+            "acf": rel,
+            "removed": res.get("removed") or [],
+            "missing": res.get("missing") or [],
+            "error": res.get("error"),
+        }
+
     # ------------------------- 文件清理 -------------------------
     @staticmethod
     def _safe_id(value: str, what: str) -> str:
@@ -209,7 +264,12 @@ class SyncManager:
         return {"deleted": deleted, "errors": errors}
 
     def delete_game_files(self, appid: str) -> dict:
-        """删除某游戏的整个下载目录 <storage>/<appid>（含 .mod_zips 等全部内容）。"""
+        """删除某游戏的整个下载目录 <storage>/<appid>（含 .mod_zips 等全部内容）。
+
+        同时删除 `appworkshop_<appid>.acf`（若该 ACF 落在 steamcmd 自身目录而非
+        storage 下，单删 storage 目录是删不到的）：文件删了记录还在，会让 steamcmd
+        认为工坊条目仍然有效。
+        """
         appid = self._safe_id(appid, "appid")
         root = self.install_dir_for(appid)
         deleted, errors = [], []
@@ -219,6 +279,17 @@ class SyncManager:
                 deleted.append(str(root.relative_to(self.storage_abs())))
             except Exception as e:  # noqa: BLE001
                 errors.append({"target": str(root), "error": f"{type(e).__name__}: {e}"})
+        # storage 下的 ACF 已随目录删除；这里只清理「落在其它位置」的那份
+        acf = acf_remove_file(appid, extra_dirs=self._acf_extra_dirs())
+        if acf.get("error"):
+            errors.append({"target": acf.get("path") or "appworkshop",
+                           "error": f"删除 ACF 失败: {acf['error']}"})
+        elif acf.get("deleted"):
+            try:
+                rel = str(Path(acf["path"]).relative_to(self.storage_abs()))
+            except ValueError:
+                rel = acf["path"]
+            deleted.append(rel)
         return {"deleted": deleted, "errors": errors}
 
     # ------------------------- 任务 -------------------------

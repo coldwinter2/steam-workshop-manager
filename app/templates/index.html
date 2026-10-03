@@ -718,7 +718,7 @@ $("#gInstall").onchange = () => {
   $("#gExtField").style.display = $("#gInstall").value === "rename" ? "" : "none";
 };
 async function delGame(appid) {
-  if (!confirm("确定删除该游戏？其独立配置文件、所有 Mod 配置及已下载的 Mod 文件都将被删除。")) return;
+  if (!confirm("确定删除该游戏？其独立配置文件、所有 Mod 配置、已下载的 Mod 文件以及 steamcmd 的下载记录（ACF）都将被删除。")) return;
   try {
     const r = await api("/api/games/" + appid, {method:"DELETE"});
     let msg = "已删除游戏";
@@ -779,13 +779,16 @@ async function addMod(appid) {
   }
 }
 async function delMod(appid, itemid) {
-  if (!confirm("确定移除该 Mod？已下载的文件与不再被其它 Mod 依赖的自动依赖（含其文件）将被一并删除。")) return;
+  if (!confirm("确定移除该 Mod？已下载的文件、steamcmd 的下载记录（ACF）与不再被其它 Mod 依赖的自动依赖（含其文件）将被一并删除。")) return;
   try {
     const r = await api(`/api/games/${appid}/mods/${itemid}`, {method:"DELETE"});
     let msg = "已移除 Mod";
     if (r.removed_auto && r.removed_auto.length)
       msg += `，并清理 ${r.removed_auto.length} 个不再被依赖的自动依赖`;
     if (r.deleted && r.deleted.length) msg += `，已删除 ${r.deleted.length} 项下载文件`;
+    const acf = r.acf || {};
+    if (acf.error) msg += `（ACF 维护失败: ${acf.error}）`;
+    else if (acf.removed && acf.removed.length) msg += `，并从 ACF 摘除 ${acf.removed.length} 条下载记录`;
     if (r.errors && r.errors.length) msg += `（${r.errors.length} 个删除失败）`;
     toast(msg); loadGames(); loadStatus();
   } catch (e) { toast("删除失败: " + e.message); }
