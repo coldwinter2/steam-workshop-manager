@@ -238,15 +238,15 @@
           <input type="checkbox" id="auDelayEnabled" /> 新增 Mod 后延时触发一次更新
         </label>
         <div class="field"><label>延时时间（分钟）</label>
-          <input id="auDelayMinutes" type="number" min="1" step="1" style="min-width:110px;" />
+          <input id="auDelayMinutes" type="number" min="0.1" step="0.1" style="min-width:110px;" />
         </div>
       </div>
       <div class="row">
         <label style="display:flex;align-items:center;gap:6px;color:var(--text-dim);font-size:13px;">
           <input type="checkbox" id="auScanEnabled" /> 定时扫描（发现未下载 Mod 时触发）
         </label>
-        <div class="field"><label>扫描间隔（小时）</label>
-          <input id="auScanHours" type="number" min="1" step="0.5" style="min-width:110px;" />
+        <div class="field"><label>扫描间隔（分钟）</label>
+          <input id="auScanMinutes" type="number" min="1" step="1" style="min-width:110px;" />
         </div>
       </div>
       <button class="btn primary" id="saveAutoBtn">保存自动更新设置</button>
@@ -892,7 +892,7 @@ async function loadSettings() {
   $("#auDelayEnabled").checked = !!au.delay_enabled;
   $("#auDelayMinutes").value = au.delay_minutes != null ? au.delay_minutes : 5;
   $("#auScanEnabled").checked = !!au.scan_enabled;
-  $("#auScanHours").value = au.scan_interval_hours != null ? au.scan_interval_hours : 1;
+  $("#auScanMinutes").value = au.scan_interval != null ? au.scan_interval : 5;
 }
 $("#saveAutoBtn").onclick = async () => {
   const body = {
@@ -900,7 +900,7 @@ $("#saveAutoBtn").onclick = async () => {
     delay_enabled: $("#auDelayEnabled").checked,
     delay_minutes: Number($("#auDelayMinutes").value) || 1,
     scan_enabled: $("#auScanEnabled").checked,
-    scan_interval_hours: Number($("#auScanHours").value) || 1,
+    scan_interval: Number($("#auScanMinutes").value) || 1,
   };
   try {
     await api("/api/auto_update", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
